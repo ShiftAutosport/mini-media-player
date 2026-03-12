@@ -8,8 +8,8 @@ import {
   TemplateResult,
 } from 'lit';
 import { property, state, customElement } from 'lit/decorators.js';
-import { classMap } from 'lit/directives/class-map';
-import { styleMap } from 'lit/directives/style-map';
+import { classMap } from 'lit/directives/class-map.js';
+import { styleMap } from 'lit/directives/style-map.js';
 import type { DirectiveResult } from 'lit/directive.js';
 import type { StyleMapDirective } from 'lit/directives/style-map.js';
 
@@ -41,9 +41,16 @@ import { MiniMediaPlayerBaseConfiguration, MiniMediaPlayerConfiguration } from '
 class MiniMediaPlayer extends LitElement {
   @property({ attribute: false })
   set hass(hass) {
-    if (!hass) return;
-    const entity = hass.states[this.config.entity] as MediaPlayerEntity;
+    const old = this._hass;
     this._hass = hass;
+
+    // Force re-render on every hass update
+    this.requestUpdate('hass', old);
+
+    if (!hass) return;
+
+    const entity = hass.states[this.config.entity] as MediaPlayerEntity;
+
     if (entity && this.entity !== entity) {
       this.entity = entity;
       this.player = new MediaPlayerObject(hass, this.config, entity);
@@ -51,7 +58,8 @@ class MiniMediaPlayer extends LitElement {
       this.idle = this.player.idle;
       if (this.player.trackIdle) this.updateIdleStatus();
     }
-    if (this.config && this.config.speaker_group && this.config.speaker_group.group_mgmt_entity) {
+
+    if (this.config?.speaker_group?.group_mgmt_entity) {
       const altPlayer = hass.states[this.config.speaker_group.group_mgmt_entity] as MediaPlayerEntity;
       if (altPlayer && this.groupMgmtEntity !== altPlayer) {
         this.groupMgmtEntity = altPlayer;
@@ -122,6 +130,10 @@ class MiniMediaPlayer extends LitElement {
     if (changedProps.has('player') && this.config.artwork === 'material') {
       this.setColors();
     }
+    if (changedProps.has('hass')) {
+      return true;
+    }
+
     return UPDATE_PROPS.some((prop) => changedProps.has(prop)) && Boolean(this.player);
   }
 
@@ -150,11 +162,22 @@ class MiniMediaPlayer extends LitElement {
     this.edit = this.config.speaker_group.expanded || false;
   }
 
-  protected updated() {
-    if (this.config.info === 'scroll')
+  protected updated(changedProps: PropertyValues) {
+    if (this.config.info === 'scroll') {
       setTimeout(() => {
         this.computeOverflow();
       }, 10);
+    }
+
+    // Your custom shortcut rebinding logic
+    if (changedProps.has('hass')) {
+      const shortcuts = this.renderRoot.querySelector('mmp-shortcuts') as any;
+      if (shortcuts) {
+        shortcuts.hass = this.hass;
+        shortcuts.player = this.player;
+        shortcuts.shortcuts = this.config.shortcuts;
+      }
+    }
   }
 
   render({ config } = this): TemplateResult | void {
@@ -186,27 +209,32 @@ class MiniMediaPlayer extends LitElement {
           </div>
           <div class="mmp-player__adds">
             ${!config.collapse && this.player.isActive
-        ? html`
+              ? html`
                   <mmp-media-controls .player=${this.player} .config=${config} .break=${this.break}>
                   </mmp-media-controls>
                 `
-        : ''}
-            <mmp-shortcuts .player=${this.player} .shortcuts=${config.shortcuts}> </mmp-shortcuts>
+              : ''}
+            <mmp-shortcuts
+              .player=${this.player}
+              .shortcuts=${config.shortcuts}
+              .hass=${this.hass}
+            >
+            </mmp-shortcuts>
             ${config.tts
-        ? html` <mmp-tts .config=${config.tts} .hass=${this.hass} .player=${this.player}> </mmp-tts> `
-        : ''}
+              ? html` <mmp-tts .config=${config.tts} .hass=${this.hass} .player=${this.player}> </mmp-tts> `
+              : ''}
             <mmp-group-list
               .hass=${this.hass}
               .visible=${this.edit}
               .entities=${config.speaker_group.entities}
               .player=${this.groupMgmtPlayer ? this.groupMgmtPlayer : this.player}
-              >>
+            >
             </mmp-group-list>
           </div>
         </div>
         <div class="mmp__container">
           ${this.player.isActive && this.player.hasProgress
-        ? html`
+            ? html`
                 <mmp-progress
                   .player=${this.player}
                   .showTime=${!this.config.hide.runtime}
@@ -214,7 +242,7 @@ class MiniMediaPlayer extends LitElement {
                 >
                 </mmp-progress>
               `
-        : ''}
+            : ''}
         </div>
       </ha-card>
     `;
@@ -250,8 +278,10 @@ class MiniMediaPlayer extends LitElement {
       width: this.config.artwork === 'material' ? `${this.cardHeight}px` : '',
     };
 
-    return html` <div class="cover" style=${styleMap(artworkStyle)}></div>
-      ${this.prevThumbnail && html` <div class="cover --prev" style=${styleMap(artworkPrevStyle)}></div> `}`;
+    return html`
+      <div class="cover" style=${styleMap(artworkStyle)}></div>
+      ${this.prevThumbnail && html` <div class="cover --prev" style=${styleMap(artworkPrevStyle)}></div> `}
+    `;
   }
 
   renderGradient(): TemplateResult | undefined {
@@ -283,59 +313,69 @@ class MiniMediaPlayer extends LitElement {
   renderIcon(): TemplateResult | undefined {
     if (this.config.hide.icon) return;
     if (this.player.isActive && this.thumbnail && this.config.artwork === 'default') {
-      return html` <div
-        class="entity__artwork"
-        style="background-image: ${this.thumbnail};"
-        ?border=${!this.config.hide.artwork_border}
-        state=${this.player.state}
-      >
-        ${' '}
-      </div>`;
+      return html`
+        <div
+          class="entity__artwork"
+          style="background-image: ${this.thumbnail};"
+          ?border=${!this.config.hide.artwork_border}
+          state=${this.player.state}
+        >
+          ${' '}
+        </div>
+      `;
     }
 
     if (this.config.icon_image != undefined) {
-      return html` <div class="entity__icon">
-        <img src="${this.config.icon_image}" height="100%" />
-      </div>`;
+      return html`
+        <div class="entity__icon">
+          <img src="${this.config.icon_image}" height="100%" />
+        </div>
+      `;
     }
 
     const active = !this.config.hide.icon_state && this.player.isActive;
-    return html` <div class="entity__icon" ?color=${active}>
-      <ha-state-icon
-        .hass=${this.hass}
-        .icon=${this.config.icon}
-        .state=${this.entity}
-        .stateObj=${this.entity}
-      ></ha-state-icon>
-    </div>`;
+    return html`
+      <div class="entity__icon" ?color=${active}>
+        <ha-state-icon
+          .hass=${this.hass}
+          .icon=${this.config.icon}
+          .state=${this.entity}
+          .stateObj=${this.entity}
+        ></ha-state-icon>
+      </div>
+    `;
   }
 
   renderEntityName(): TemplateResult | undefined {
     if (this.config.hide.name) return;
 
-    return html` <div class="entity__info__name">${this.name} ${this.speakerCount()}</div>`;
+    return html` <div class="entity__info__name">${this.name} ${this.speakerCount()}</div> `;
   }
 
   renderMediaInfo(): TemplateResult | undefined {
     if (this.config.hide.info) return;
     const items = this.player.mediaInfo;
 
-    return html` <div
-      class="entity__info__media"
-      ?short=${this.config.info === 'short' || !this.player.isActive}
-      ?short-scroll=${this.config.info === 'scroll'}
-      ?scroll=${this.overflow}
-      style="animation-duration: ${this.overflow}s;"
-    >
-      ${this.config.info === 'scroll'
-        ? html` <div>
-            <div class="marquee">
-              ${items.map((i) => html`<span class=${`attr__${i.attr}`}>${i.prefix + i.text}</span>`)}
-            </div>
-          </div>`
-        : ''}
-      ${items.map((i) => html`<span class=${`attr__${i.attr}`}>${i.prefix + i.text}</span>`)}
-    </div>`;
+    return html`
+      <div
+        class="entity__info__media"
+        ?short=${this.config.info === 'short' || !this.player.isActive}
+        ?short-scroll=${this.config.info === 'scroll'}
+        ?scroll=${this.overflow}
+        style="animation-duration: ${this.overflow}s;"
+      >
+        ${this.config.info === 'scroll'
+          ? html`
+              <div>
+                <div class="marquee">
+                  ${items.map((i) => html`<span class=${`attr__${i.attr}`}>${i.prefix + i.text}</span>`)}
+                </div>
+              </div>
+            `
+          : ''}
+        ${items.map((i) => html`<span class=${`attr__${i.attr}`}>${i.prefix + i.text}</span>`)}
+      </div>
+    `;
   }
 
   speakerCount(): string | undefined {
@@ -352,14 +392,14 @@ class MiniMediaPlayer extends LitElement {
       ...(scale && { '--mmp-unit': `${40 * scale}px` }),
       ...(this.foregroundColor &&
         this.player.isActive && {
-        '--mmp-text-color': this.foregroundColor,
-        '--mmp-icon-color': this.foregroundColor,
-        '--mmp-icon-active-color': this.foregroundColor,
-        '--mmp-accent-color': this.foregroundColor,
-        '--secondary-text-color': this.foregroundColor,
-        '--mmp-media-cover-info-color': this.foregroundColor,
-        '--ha-control-color': this.foregroundColor,
-      }),
+          '--mmp-text-color': this.foregroundColor,
+          '--mmp-icon-color': this.foregroundColor,
+          '--mmp-icon-active-color': this.foregroundColor,
+          '--mmp-accent-color': this.foregroundColor,
+          '--secondary-text-color': this.foregroundColor,
+          '--mmp-media-cover-info-color': this.foregroundColor,
+          '--ha-control-color': this.foregroundColor,
+        }),
     });
   }
 
