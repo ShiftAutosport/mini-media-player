@@ -1,4 +1,4 @@
-import { LitElement, html, css, CSSResult, TemplateResult } from 'lit';
+import { LitElement, html, css, CSSResult } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { MiniMediaPlayerSpeakerGroupEntry } from '../config/types';
 import { HomeAssistant } from '../types';
