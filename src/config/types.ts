@@ -71,12 +71,14 @@ export interface MiniMediaPlayerShortcuts {
 }
 
 export interface MiniMediaPlayerShortcutItem {
-  type: string;
+  type: 'source' | 'service' | 'script' | 'sound_mode' | string;
   id: string;
   name?: string;
   icon?: string;
   image?: string;
   cover?: string;
+  show_when?: string | boolean;
+  hide_when?: string | boolean;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data?: Record<string, any>;
 }
