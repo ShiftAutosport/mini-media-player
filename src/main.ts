@@ -12,7 +12,6 @@ import { classMap } from 'lit/directives/class-map';
 import { styleMap } from 'lit/directives/style-map';
 import type { DirectiveResult } from 'lit/directive.js';
 import type { StyleMapDirective } from 'lit/directives/style-map.js';
-
 import ResizeObserver from 'resize-observer-polyfill';
 
 import { generateConfig } from './config/config';
@@ -39,6 +38,7 @@ import { MiniMediaPlayerBaseConfiguration, MiniMediaPlayerConfiguration } from '
 @customElement('mini-media-player')
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 class MiniMediaPlayer extends LitElement {
+/*
   @property({ attribute: false })
   set hass(hass) {
     if (!hass) return;
@@ -52,6 +52,36 @@ class MiniMediaPlayer extends LitElement {
       if (this.player.trackIdle) this.updateIdleStatus();
     }
     if (this.config && this.config.speaker_group && this.config.speaker_group.group_mgmt_entity) {
+      const altPlayer = hass.states[this.config.speaker_group.group_mgmt_entity] as MediaPlayerEntity;
+      if (altPlayer && this.groupMgmtEntity !== altPlayer) {
+        this.groupMgmtEntity = altPlayer;
+        this.groupMgmtPlayer = new MediaPlayerObject(hass, this.config, altPlayer);
+      }
+    }
+  }
+*/
+
+  @property({ attribute: false })
+  set hass(hass) {
+    const old = this._hass;
+    this._hass = hass;
+
+    // Force re-render on every hass update
+    this.requestUpdate("hass", old);
+
+    if (!hass) return;
+
+    const entity = hass.states[this.config.entity] as MediaPlayerEntity;
+
+    if (entity && this.entity !== entity) {
+      this.entity = entity;
+      this.player = new MediaPlayerObject(hass, this.config, entity);
+      this.rtl = this.computeRTL(hass);
+      this.idle = this.player.idle;
+      if (this.player.trackIdle) this.updateIdleStatus();
+    }
+
+    if (this.config?.speaker_group?.group_mgmt_entity) {
       const altPlayer = hass.states[this.config.speaker_group.group_mgmt_entity] as MediaPlayerEntity;
       if (altPlayer && this.groupMgmtEntity !== altPlayer) {
         this.groupMgmtEntity = altPlayer;
@@ -112,6 +142,10 @@ class MiniMediaPlayer extends LitElement {
     this.config = generateConfig(config);
   }
 
+  _shouldShowShortcuts(config) {
+    return !!config.shortcuts;
+  }
+
   protected shouldUpdate(changedProps: PropertyValues): boolean {
     if (this.break === undefined) this.computeRect(this);
     if (changedProps.has('prevThumbnail') && this.prevThumbnail) {
@@ -122,6 +156,10 @@ class MiniMediaPlayer extends LitElement {
     if (changedProps.has('player') && this.config.artwork === 'material') {
       this.setColors();
     }
+    if (changedProps.has('hass')) {
+      return true;
+    }
+
     return UPDATE_PROPS.some((prop) => changedProps.has(prop)) && Boolean(this.player);
   }
 
@@ -150,11 +188,21 @@ class MiniMediaPlayer extends LitElement {
     this.edit = this.config.speaker_group.expanded || false;
   }
 
-  protected updated() {
-    if (this.config.info === 'scroll')
+  protected updated(changedProps) {
+    if (this.config.info === 'scroll') {
       setTimeout(() => {
         this.computeOverflow();
       }, 10);
+    }
+
+    if (changedProps.has("hass")) {
+      const shortcuts = this.renderRoot.querySelector("mmp-shortcuts") as any;
+      if (shortcuts) {
+        shortcuts.hass = this.hass;
+        shortcuts.player = this.player;
+        shortcuts.shortcuts = this.config.shortcuts;
+      }
+    }
   }
 
   render({ config } = this): TemplateResult | void {
@@ -186,27 +234,30 @@ class MiniMediaPlayer extends LitElement {
           </div>
           <div class="mmp-player__adds">
             ${!config.collapse && this.player.isActive
-        ? html`
+              ? html`
                   <mmp-media-controls .player=${this.player} .config=${config} .break=${this.break}>
                   </mmp-media-controls>
                 `
-        : ''}
-            <mmp-shortcuts .player=${this.player} .shortcuts=${config.shortcuts}> </mmp-shortcuts>
+              : ''}
+            <mmp-shortcuts
+              .player=${this.player}
+              .shortcuts=${config.shortcuts}
+              .hass=${this.hass}>
+            </mmp-shortcuts>
             ${config.tts
-        ? html` <mmp-tts .config=${config.tts} .hass=${this.hass} .player=${this.player}> </mmp-tts> `
-        : ''}
+              ? html` <mmp-tts .config=${config.tts} .hass=${this.hass} .player=${this.player}> </mmp-tts> `
+              : ''}
             <mmp-group-list
               .hass=${this.hass}
               .visible=${this.edit}
               .entities=${config.speaker_group.entities}
-              .player=${this.groupMgmtPlayer ? this.groupMgmtPlayer : this.player}
-              >>
+              .player=${this.groupMgmtPlayer ? this.groupMgmtPlayer : this.player}>
             </mmp-group-list>
           </div>
         </div>
         <div class="mmp__container">
           ${this.player.isActive && this.player.hasProgress
-        ? html`
+            ? html`
                 <mmp-progress
                   .player=${this.player}
                   .showTime=${!this.config.hide.runtime}
@@ -214,7 +265,7 @@ class MiniMediaPlayer extends LitElement {
                 >
                 </mmp-progress>
               `
-        : ''}
+            : ''}
         </div>
       </ha-card>
     `;
@@ -293,7 +344,7 @@ class MiniMediaPlayer extends LitElement {
       </div>`;
     }
 
-    if (this.config.icon_image != undefined) {
+    if (this.config.icon_image != undefined){
       return html` <div class="entity__icon">
         <img src="${this.config.icon_image}" height="100%" />
       </div>`;
@@ -352,14 +403,14 @@ class MiniMediaPlayer extends LitElement {
       ...(scale && { '--mmp-unit': `${40 * scale}px` }),
       ...(this.foregroundColor &&
         this.player.isActive && {
-        '--mmp-text-color': this.foregroundColor,
-        '--mmp-icon-color': this.foregroundColor,
-        '--mmp-icon-active-color': this.foregroundColor,
-        '--mmp-accent-color': this.foregroundColor,
-        '--secondary-text-color': this.foregroundColor,
-        '--mmp-media-cover-info-color': this.foregroundColor,
-        '--ha-control-color': this.foregroundColor,
-      }),
+          '--mmp-text-color': this.foregroundColor,
+          '--mmp-icon-color': this.foregroundColor,
+          '--mmp-icon-active-color': this.foregroundColor,
+          '--mmp-accent-color': this.foregroundColor,
+          '--secondary-text-color': this.foregroundColor,
+          '--mmp-media-cover-info-color': this.foregroundColor,
+          '--ha-control-color': this.foregroundColor,
+        }),
     });
   }
 
